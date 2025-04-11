@@ -1,77 +1,127 @@
-//Headers
-#include "Wire.h"
-
-//Pin number declerations
+#include <Wire.h>
+const int roostLED1 = 5;
+const int roostLED2 = 6;
+const int roostLED3 = 7;
+const int sawmill = 4; 
+//const int sawLED = 10;
+const int photores = 8;
+//const int photoLED = 9;
 const int startButton = 2;
 
-const int roostSensor1 = 5;
-const int roostSensor2 = 6;
-const int roostSensor3 = 7;
-
-
+byte B_input = 0;
+bool gameActive = false;
+unsigned long startTime;
+const int timeLimit = 3000; // 3 seconds to respond
 
 void setup() {
+  pinMode(roostLED1, OUTPUT);
+  pinMode(roostLED2, OUTPUT);
+  pinMode(roostLED3, OUTPUT);
+  pinMode(sawmill, INPUT);
 
 
 
-  //Setting Pinmodes
-  pinMode(startButton, INPUT);
-  pinMode(roostSensor1, INPUT);
-  pinMode(roostSensor2, INPUT);
-  pinMode(roostSensor3, INPUT);
-
-  //I2C Extender Setup
   Wire.begin(); // wake up I2C bus
-  // set I/O pins to outputs
   Wire.beginTransmission(0x20);
   Wire.write(0x00); // IODIRA register
-  Wire.write(0x00); // set all of port A to outputs
+  Wire.write(0x00); // set entire PORT A as output
   Wire.endTransmission();
-  Wire.beginTransmission(0x20);
-  Wire.write(0x01); // IODIRB register
-  Wire.write(0x00); // set all of port B to outputs
-  Wire.endTransmission();
-
 }
 
 void loop() {
-  int gameState = 0;
-  int score = 0;
-  unsigned long inputTimeout = 2000;
-  startWait(); // waits for start button to be pressed
-  gameState = 1;
-  while(gameState == 1){
-    bool inputSuccess = false;
-    inputSuccess = birdAction(inputTimeout);
-    if(inputSuccess == false){
-      gameState = 2;
-    }
-  }
   
-
-}
-
-void startWait(){
-  while(true){
+  if(!gameActive){
     if(digitalRead(startButton) == HIGH){
-      break;
+      gameActive = true;
+      delay(1000);
+      gameLoop();
+    }
+  }
+
+}
+
+void gameLoop(){
+  int score = 0;
+  while(gameActive){
+    displayScore(score);
+    int action = random(5); //0-2: roosts, 3: sawmill, 4: mouse
+    startTime = millis();
+    bool success = false;
+    switch(action){
+      case 0:
+        digitalWrite(roostLED1, HIGH);
+        success = roostinput(1);
+      case 1:
+        digitalWrite(roostLED2, HIGH);
+        success = roostinput(2);
+      case 2: 
+        digitalWrite(roostLED3, HIGH);
+        success = roostinput(3);
+      case 3:
+        success = sawinput();
+      case 4:
+        success = mouseinput();
+    }
+
+    if(success){
+      score++; 
+    }
+    else{
+      gameActive = false;
     }
   }
 }
 
-bool birdAction(unsigned long inputTimeout){
-  int newPosition = random(0, 3);
-  byte birdLight = pow(2, newPosition);
-  Wire.beginTransmission(0x20);
-  Wire.write(0x13); // GPIOB
-  Wire.write(birdLight); // port B
-  Wire.endTransmission();
-  
-  unsigned long countDownStart = millis();
-  while(millis() - countDownStart < inputTimeout){
-    if(digitalRead(newPosition + 5 == HIGH)){
+bool roostinput(int r){
+  while (millis() - startTime < timeLimit) {
+    Wire.beginTransmission(0x20);
+    Wire.write(0x13);
+    Wire.endTransmission();
+    Wire.requestFrom(0x20, 1);
+    B_input=Wire.read();
+
+    if (B_input == pow(r, 2)) {
       return true;
     }
   }
   return false;
 }
+  
+
+bool sawinput(){
+  while(millis() - startTime < timeLimit){
+    if(sawmill){
+      return true;
+    }
+  }
+  return false;
+}
+
+bool mouseinput(){
+  while(millis() - startTime < timeLimit){
+    if(photores){
+      return true;
+    }
+  }
+  return false;
+}
+
+
+void displayScore(int num) {
+  if (num < 0 || num > 99) return; // only two-digit decimals
+
+  byte hexout = 0;
+  int tens = num / 10;
+  int ones = num % 10;
+
+  if (tens < 16 && ones < 16) {
+     hexout = (tens << 4) | ones; // combine into one byte: 0xTTOO
+  }
+
+  Wire.beginTransmission(0x20);
+  Wire.write(0x12); // IODIRA register
+  Wire.write(hexout); // set entire PORT A as output
+  Wire.endTransmission();
+  delay(10);  
+}
+
