@@ -2,9 +2,9 @@
 #include "SoftwareSerial.h"
 #include "DFRobotDFPlayerMini.h"
 const int startButton = 2;
-const int roostLED2 = 5;
-const int roostLED1 = 6;
-const int roostLED3 = 7;
+const int roostLED1 = 5;
+const int roostLED0 = 6;
+const int roostLED2 = 7;
 const int sawmill = 4;
 const int sympToken = 8;
 
@@ -17,15 +17,16 @@ DFRobotDFPlayerMini player;
 
 byte B_input = 0;
 bool gameActive = false;
+bool sawState = false;
 unsigned long startTime;
 unsigned long timeLimit = 3000; // 3 seconds to respond
 
 void setup() {
   softwareSerial.begin(9600);
   delay(1000);
+  pinMode(roostLED0, OUTPUT);
   pinMode(roostLED1, OUTPUT);
   pinMode(roostLED2, OUTPUT);
-  pinMode(roostLED3, OUTPUT);
   player.begin(softwareSerial);
   player.volume(30);
 
@@ -41,7 +42,7 @@ void loop() {
   int score = 0;
   timeLimit = 3000;
   bool success = false;
-  bool sawState = digitalRead(sawmill);
+  sawState = digitalRead(sawmill);
   
   while(!gameActive){
     if(digitalRead(startButton) == HIGH){
@@ -51,69 +52,41 @@ void loop() {
   
     }
     else{
+      digitalWrite(roostLED0, LOW);
       digitalWrite(roostLED1, LOW);
       digitalWrite(roostLED2, LOW);
-      digitalWrite(roostLED3, LOW);
       delay(1000);
 
+      digitalWrite(roostLED0, HIGH);
       digitalWrite(roostLED1, HIGH);
       digitalWrite(roostLED2, HIGH);
-      digitalWrite(roostLED3, HIGH);
       delay(1000);
 
     }
   }
-  int oldaction = -1;
-  int action = 0;
   while(gameActive){
-    displayScore(action);
+    displayScore(score);
+    digitalWrite(roostLED0, LOW);
     digitalWrite(roostLED1, LOW);
     digitalWrite(roostLED2, LOW);
-    digitalWrite(roostLED3, LOW);
     delay(500);   
     startTime = millis();
-    do{
-      action = random(5);
-    }while(action == oldaction);
+
+    int action = random(3);
 
     switch(action){
       case 0:
         player.playFolder(1,1);
-        digitalWrite(roostLED1, HIGH);
-        digitalWrite(roostLED2, LOW);
-        digitalWrite(roostLED3, LOW);
-
-        delay(300);
-        success = roostInput(0);
-
+        success = roostInput();
         break;
+
       case 1:
-        player.playFolder(1,1);
-        digitalWrite(roostLED2, HIGH);
-        digitalWrite(roostLED1, LOW);
-        digitalWrite(roostLED3, LOW);
-        delay(300);
-        success = roostInput(1);
-
-        break;
-      case 2: 
-        player.playFolder(1,1);
-
-        digitalWrite(roostLED3, HIGH);
-        digitalWrite(roostLED2, LOW);
-        digitalWrite(roostLED1, LOW);
-
-        delay(300);
-        success = roostInput(2);
-        break;
-
-      case 3:
         player.playFolder(1, 2);
         success = sawInput(sawState);
 
         break;
 
-      case 4:
+      case 2:
         player.playFolder(1, 3);
         success = martialLaw();
         break;
@@ -123,7 +96,6 @@ void loop() {
       timeLimit = 3000 - 24 * score;
       score ++;  
       sawState = digitalRead(sawmill);
-      oldaction = action;
     }
     else{
       gameActive = false;
@@ -141,6 +113,14 @@ bool martialLaw(){
     if(digitalRead(sympToken) == LOW){
       return true;
     }
+    Wire.beginTransmission(0x20);
+    Wire.write(0x13);
+    Wire.endTransmission();
+    Wire.requestFrom(0x20, 1);
+    B_input=Wire.read();
+    if(B_input == 0x00 || digitalRead(sawmill) != sawState){
+      return false;
+    }    
   }
   return false;
 }
@@ -150,10 +130,63 @@ bool sawInput(bool sawState){
     if(digitalRead(sawmill) != sawState){
       return true;
     }
+    Wire.beginTransmission(0x20);
+    Wire.write(0x13);
+    Wire.endTransmission();
+    Wire.requestFrom(0x20, 1);
+    B_input=Wire.read();
+    if(B_input == 0x00 || digitalRead(sympToken) == LOW){
+      return false;
+    }
   }
   return false;
 }
-bool roostInput(int r){
+
+
+bool roostInput(){
+
+  Wire.beginTransmission(0x20);
+  Wire.write(0x13);
+  Wire.endTransmission();
+  Wire.requestFrom(0x20, 1);
+  B_input=Wire.read();
+
+  int currentRoost = 0;
+
+  if(B_input == 0x01){
+    currentRoost = 0;
+  }
+  else if (B_input == 0x02){
+    currentRoost = 1;
+  }
+  else if (B_input == 0x04){
+    currentRoost = 2;
+  }
+
+  int randAdd = random(2);
+  randAdd++;
+
+  randAdd += currentRoost;
+
+  int newRoost = randAdd % 3;
+
+  if(newRoost == 0){
+    digitalWrite(roostLED0, HIGH);
+    digitalWrite(roostLED1, LOW);
+    digitalWrite(roostLED2, LOW);
+  }
+  else if(newRoost == 1){
+    digitalWrite(roostLED0, LOW);
+    digitalWrite(roostLED1, HIGH);
+    digitalWrite(roostLED2, LOW);
+  }
+
+  else if(newRoost == 2){
+    digitalWrite(roostLED0, LOW);
+    digitalWrite(roostLED1, LOW);
+    digitalWrite(roostLED2, HIGH);
+  }
+
   while (millis() - startTime < timeLimit) {
     Wire.beginTransmission(0x20);
     Wire.write(0x13);
@@ -161,11 +194,11 @@ bool roostInput(int r){
     Wire.requestFrom(0x20, 1);
     B_input=Wire.read();
 
-    switch(r){
+    switch(newRoost){
       case 0:
         if(B_input == 0x01){
           return true;
-        }
+        } 
         break;
       case 1:
         if(B_input == 0x02){
@@ -177,6 +210,9 @@ bool roostInput(int r){
           return true;
         }
       break;
+    }
+    if(digitalRead(sawmill) != sawState || digitalRead(sympToken) == LOW){
+      return false;
     }
   }
   return false;
